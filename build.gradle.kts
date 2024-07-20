@@ -1,9 +1,6 @@
-import org.objectweb.asm.tools.Retrofitter
 import xyz.wagyourtail.jvmdg.gradle.task.DowngradeJar
+import xyz.wagyourtail.zson.jvmdg.j5.FakeJava5Downgrader
 import java.time.ZonedDateTime
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import java.util.zip.Deflater
 
 plugins {
     id("idea")
@@ -117,39 +114,42 @@ tasks.javadoc {
     options.addBooleanOption("Xdoclint:none", true)
 }
 
+jvmdg.apiJar.add(jvmdg.apiJarDefault)
+jvmdg.apiJar.add(file("buildSrc/build/libs/buildSrc.jar"))
+
 tasks.downgradeJar {
     dependsOn(tasks.jar)
-    downgradeTo = JavaVersion.VERSION_1_8
+    downgradeTo = JavaVersion.VERSION_1_5
     archiveClassifier = "downgraded-8"
 
-    doLast {
-        val jar = archiveFile.get().asFile
-        val dir = temporaryDir.resolve("downgradeJar5")
-        dir.mkdirs()
-
-        copy {
-            from(zipTree(jar))
-            into(dir)
-        }
-
-        Retrofitter().run {
-            retrofit(dir.toPath())
-            //verify(dir.toPath())
-        }
-
-        JarOutputStream(archiveFile.get().asFile.outputStream()).use { jos ->
-            jos.setLevel(Deflater.BEST_COMPRESSION)
-            dir.walkTopDown().forEach { file ->
-                if (file.isFile) {
-                    jos.putNextEntry(JarEntry(file.relativeTo(dir).toPath().toString()))
-                    file.inputStream().use { it.copyTo(jos) }
-                    jos.closeEntry()
-                }
-            }
-            jos.flush()
-            jos.finish()
-        }
-    }
+//    doLast {
+//        val jar = archiveFile.get().asFile
+//        val dir = temporaryDir.resolve("downgradeJar5")
+//        dir.mkdirs()
+//
+//        copy {
+//            from(zipTree(jar))
+//            into(dir)
+//        }
+//
+//        Retrofitter().run {
+//            retrofit(dir.toPath())
+//            //verify(dir.toPath())
+//        }
+//
+//        JarOutputStream(archiveFile.get().asFile.outputStream()).use { jos ->
+//            jos.setLevel(Deflater.BEST_COMPRESSION)
+//            dir.walkTopDown().forEach { file ->
+//                if (file.isFile) {
+//                    jos.putNextEntry(JarEntry(file.relativeTo(dir).toPath().toString()))
+//                    file.inputStream().use { it.copyTo(jos) }
+//                    jos.closeEntry()
+//                }
+//            }
+//            jos.flush()
+//            jos.finish()
+//        }
+//    }
 }
 
 val downgradeJar17 = tasks.register<DowngradeJar>("downgradeJar17") {
@@ -180,9 +180,26 @@ tasks.assemble {
     dependsOn(tasks.jar, sourcesJar, downgradeJar17)
 }
 
+val downgradedTest by tasks.registering(Test::class) {
+    group = "verification"
+    useJUnitPlatform()
+    dependsOn(tasks.downgradeJar)
+    outputs.upToDateWhen { false }
+    classpath = tasks.downgradeJar.get().outputs.files + sourceSets.test.get().output + sourceSets.test.get().runtimeClasspath - sourceSets.main.get().output
+}
+
+val downgraded17Test by tasks.registering(Test::class) {
+    group = "verification"
+    useJUnitPlatform()
+    dependsOn(downgradeJar17)
+    outputs.upToDateWhen { false }
+    classpath = downgradeJar17.get().outputs.files + sourceSets.test.get().output + sourceSets.test.get().runtimeClasspath - sourceSets.main.get().output
+}
+
 tasks.test {
     useJUnitPlatform()
     outputs.upToDateWhen { false }
+    finalizedBy(downgradedTest, downgraded17Test)
 }
 
 tasks.withType<GenerateModuleMetadata> {
@@ -225,7 +242,6 @@ publishing {
         }
     }
 }
-
 tasks.withType<AbstractPublishToMaven> {
     dependsOn(tasks.assemble, tasks.check)
 }
