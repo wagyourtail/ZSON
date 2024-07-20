@@ -21,6 +21,7 @@ public class FakeJava5Downgrader extends VersionProvider {
 
     @Override
     public void init() {
+        stub(J_L_I_LambdaMetafactory.class);
         stub(J_L_Throwable.class);
     }
 
