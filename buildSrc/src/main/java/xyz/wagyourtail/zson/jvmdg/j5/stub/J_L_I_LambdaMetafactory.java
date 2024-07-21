@@ -79,7 +79,11 @@ public class J_L_I_LambdaMetafactory {
             }
         }
         if (clinit == null) {
-            clinit = new MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+            clinit = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+            clinit.visitCode();
+            clinit.visitInsn(Opcodes.RETURN);
+            clinit.visitMaxs(0, 0);
+            clinit.visitEnd();
             selfClass.methods.add(clinit);
         }
         // insert to beginning of <clinit>
@@ -107,17 +111,38 @@ public class J_L_I_LambdaMetafactory {
             "()Ljava/lang/invoke/MethodHandles$Lookup;",
             false
         ));
-//        lookup.findVirtual(Class owner, String name, MethodType type);
-        l.add(new LdcInsnNode(Type.getType(invokedMethod.getOwner())));
-        l.add(new LdcInsnNode(invokedMethod.getName()));
-        l.add(methodDescToMethodType(Type.getMethodType(invokedMethod.getDesc())));
-        l.add(new MethodInsnNode(
-            Opcodes.INVOKEVIRTUAL,
-            "java/lang/invoke/MethodHandles$Lookup",
-            "findVirtual",
-            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;",
-            false
-        ));
+        l.add(new LdcInsnNode(Type.getObjectType(invokedMethod.getOwner())));
+        if (invokedMethod.getTag() == Opcodes.H_NEWINVOKESPECIAL) {
+            l.add(methodDescToMethodType(Type.getMethodType(invokedMethod.getDesc())));
+            l.add(new MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/invoke/MethodHandles$Lookup",
+                "findConstructor",
+                "(Ljava/lang/Class;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;",
+                false
+            ));
+        } else if (invokedMethod.getTag() == Opcodes.H_INVOKESPECIAL) {
+            l.add(new LdcInsnNode(invokedMethod.getName()));
+            l.add(methodDescToMethodType(Type.getMethodType(invokedMethod.getDesc())));
+            l.add(new LdcInsnNode(Type.getObjectType(selfClass.name)));
+            l.add(new MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/invoke/MethodHandles$Lookup",
+                "findSpecial",
+                "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;",
+                false
+            ));
+        } else {
+            l.add(new LdcInsnNode(invokedMethod.getName()));
+            l.add(methodDescToMethodType(Type.getMethodType(invokedMethod.getDesc())));
+            l.add(new MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/invoke/MethodHandles$Lookup",
+                invokedMethod.getTag() == Opcodes.H_INVOKESTATIC ? "findStatic" : "findVirtual",
+                "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;",
+                false
+            ));
+        }
         // get invoked type
         l.add(methodDescToMethodType(invokedType));
         // call metafactory
@@ -130,11 +155,11 @@ public class J_L_I_LambdaMetafactory {
         ));
         // call getTarget
         l.add(new MethodInsnNode(
-            Opcodes.INVOKEINTERFACE,
+            Opcodes.INVOKEVIRTUAL,
             "java/lang/invoke/CallSite",
             "getTarget",
             "()Ljava/lang/invoke/MethodHandle;",
-            true
+            false
         ));
         if (args.length != 0) {
             // create a field to store the handle
@@ -154,13 +179,6 @@ public class J_L_I_LambdaMetafactory {
             mn.visitInsn(returnType.getOpcode(Opcodes.IRETURN));
             mn.visitEnd();
             selfClass.methods.add(mn);
-            l.add(new MethodInsnNode(
-                Opcodes.INVOKESTATIC,
-                selfClass.name,
-                mn.name,
-                mn.desc,
-                false
-            ));
             clinit.instructions.insert(l);
             return new MethodInsnNode(
                 Opcodes.INVOKESTATIC,
@@ -187,17 +205,58 @@ public class J_L_I_LambdaMetafactory {
         }
     }
 
+    public static String getBoxTypeForPrimitive(Type t) {
+        switch (t.getSort()) {
+            case Type.BOOLEAN:
+                return "java/lang/Boolean";
+            case Type.BYTE:
+                return "java/lang/Byte";
+            case Type.CHAR:
+                return "java/lang/Character";
+            case Type.SHORT:
+                return "java/lang/Short";
+            case Type.INT:
+                return "java/lang/Integer";
+            case Type.LONG:
+                return "java/lang/Long";
+            case Type.FLOAT:
+                return "java/lang/Float";
+            case Type.DOUBLE:
+                return "java/lang/Double";
+            default:
+                return null;
+        }
+    }
+
     public static InsnList methodDescToMethodType(Type desc) {
         InsnList l = new InsnList();
         Type returnType = desc.getReturnType();
         Type[] args = desc.getArgumentTypes();
-        l.add(new LdcInsnNode(returnType));
+        if (returnType.getSort() < Type.ARRAY) {
+            l.add(new FieldInsnNode(
+                Opcodes.GETSTATIC,
+                getBoxTypeForPrimitive(returnType),
+                "TYPE",
+                "Ljava/lang/Class;"
+            ));
+        } else {
+            l.add(new LdcInsnNode(returnType));
+        }
         l.add(new LdcInsnNode(args.length));
         l.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Class"));
         for (int i = 0; i < args.length; i++) {
             l.add(new InsnNode(Opcodes.DUP));
             l.add(new LdcInsnNode(i));
-            l.add(new LdcInsnNode(args[i]));
+            if (args[i].getSort() < Type.ARRAY) {
+                l.add(new FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    getBoxTypeForPrimitive(args[i]),
+                    "TYPE",
+                    "Ljava/lang/Class;"
+                ));
+            } else {
+                l.add(new LdcInsnNode(args[i]));
+            }
             l.add(new InsnNode(Opcodes.AASTORE));
         }
         l.add(new MethodInsnNode(
@@ -214,7 +273,7 @@ public class J_L_I_LambdaMetafactory {
         Object[] bsmArgs;
 
         public IndyFieldNode(InvokeDynamicInsnNode indy, String name) {
-            super(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, name, Type.getReturnType(indy.desc).getDescriptor(), null, null);
+            super(Opcodes.ASM9, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, name, Type.getReturnType(indy.desc).getDescriptor(), null, null);
             this.bsmArgs = indy.bsmArgs;
         }
     }
@@ -223,7 +282,7 @@ public class J_L_I_LambdaMetafactory {
         Object[] bsmArgs;
 
         public IndyMethodNode(InvokeDynamicInsnNode indy, String name) {
-            super(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, name, indy.desc, null, null);
+            super(Opcodes.ASM9, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, name, indy.desc, null, null);
             this.bsmArgs = indy.bsmArgs;
         }
     }
