@@ -28,6 +28,7 @@ public class FakeJava5Downgrader extends VersionProvider {
     public ClassNode otherTransforms(ClassNode clazz, Set<ClassNode> extra, Function<String, ClassNode> getReadOnly, Set<String> warnings) {
         // remove all stack map data
         for (MethodNode method : clazz.methods) {
+            method.parameters = null;
             if (method.instructions != null) {
                 Iterator<AbstractInsnNode> it = method.instructions.iterator();
                 while (it.hasNext()) {
