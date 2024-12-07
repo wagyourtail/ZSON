@@ -1,5 +1,9 @@
-repositories.mavenCentral()
-repositories.gradlePluginPortal()
+repositories {
+    mavenLocal()
+    maven("https://maven.wagyourtail.xyz/snapshots/")
+    mavenCentral()
+    gradlePluginPortal()
+}
 
 dependencies {
     implementation("org.ow2.asm:asm:9.7")

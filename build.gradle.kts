@@ -127,10 +127,8 @@ jmh {
     zip64 = false
 }
 
-jvmdg.apiJar.addAll(
-    jvmdg.apiJarDefault,
-    file("buildSrc/build/libs/buildSrc.jar")
-)
+jvmdg.debugSkipStubs = setOf(JavaVersion.VERSION_1_8, JavaVersion.VERSION_1_7)
+jvmdg.debugSkipStub = setOf("Lxyz/wagyourtail/jvmdg/j18/stub/java_base/J_L_System;")
 
 repositories {
     mavenCentral()
@@ -179,6 +177,7 @@ downgradingJavaVersions.forEach {
         description = "Downgrades the test compile classpath to Java $displayName"
         downgradeTo = it.testVersion
         inputCollection = sourceSets.test.get().output
+        debugSkipStub = setOf("Lxyz/wagyourtail/jvmdg/j18/stub/java_base/J_L_System;")
     }
 
     val dgTest = tasks.register<Test>("downgradedTest$underscoreName") {
